@@ -21,7 +21,7 @@ COPY .mvn .mvn
 COPY mvnw .
 COPY pom.xml .
 
-# Make mvnw executable
+# Make Maven wrapper executable
 RUN chmod +x mvnw
 
 # Download dependencies offline
@@ -30,7 +30,7 @@ RUN ./mvnw dependency:go-offline -B -q
 # Copy source code
 COPY ./src ./src
 
-# Build the jar (skip tests for faster build)
+# Build the jar (skip tests for faster builds)
 RUN ./mvnw -DskipTests package -q \
     && mv /build/target/ui-0.0.1-SNAPSHOT.jar /build/app.jar
 
@@ -45,7 +45,7 @@ RUN dnf --setopt=install_weak_deps=False install -q -y \
     shadow-utils \
     && dnf clean all
 
-# Replace minimal curl with full version
+# Replace minimal curl with full version (needed for some tools)
 RUN dnf -q -y swap libcurl-minimal libcurl-full \
     && dnf -q -y swap curl-minimal curl-full
 
@@ -68,7 +68,7 @@ COPY ./ATTRIBUTION.md ./LICENSES.md
 # Copy built jar from build stage
 COPY --chown=appuser:appuser --from=build-env /build/app.jar .
 
-# Expose app port
+# Expose application port
 EXPOSE 8080
 
 # Run the application
