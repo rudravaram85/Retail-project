@@ -11,13 +11,16 @@ RUN dnf -y update && \
 # Set working directory
 WORKDIR /app
 
-# Copy only pom.xml first to leverage Docker cache
+# Copy pom.xml first to leverage Docker cache
 COPY pom.xml .
 
-# Download dependencies offline
+# Copy all files and immediately set execute permissions on mvnw
 COPY . .
 RUN chmod +x ./mvnw
+
+# Download dependencies offline
 RUN ./mvnw dependency:go-offline -B -q
+
 # Copy source code
 COPY src ./src
 
