@@ -1,41 +1,38 @@
-# =========================
-# Stage 1: Build
-# =========================
-FROM amazoncorretto:17-alpine AS build-env
+# ---------- Build Stage ----------
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023 AS build-env
 
-# Set working directory
-WORKDIR /app
+# Install Java + Maven
+RUN dnf --setopt=install_weak_deps=False install -y -q \
+        maven \
+        java-21-amazon-corretto-headless \
+        which \
+        tar \
+        gzip \
+    && dnf clean all
 
-# Copy Maven wrapper and make sure it's executable
-COPY mvnw .
-COPY .mvn .mvn
-RUN chmod +x mvnw
+WORKDIR /build
 
-# Copy pom.xml first to leverage Docker cache
+# Copy pom and download dependencies first
 COPY pom.xml .
+RUN mvn dependency:go-offline -B -q
 
-# Download all dependencies offline
-RUN ./mvnw dependency:go-offline -B -q
-
-# Copy source code
+# Copy source code and build
 COPY src ./src
+RUN mvn -DskipTests package -q \
+    && mv /build/target/ui-0.0.1-SNAPSHOT.jar /build/app.jar
 
-# Build the project
-RUN ./mvnw clean package -B -DskipTests
+# ---------- Final Stage ----------
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
-# =========================
-# Stage 2: Runtime
-# =========================
-FROM amazoncorretto:17-alpine
+RUN dnf --setopt=install_weak_deps=False install -y -q \
+        java-21-amazon-corretto-headless \
+        shadow-utils \
+    && dnf clean all
 
-# Set working directory
 WORKDIR /app
 
-# Copy the built jar from the previous stage
-COPY --from=build-env /app/target/*.jar app.jar
+# Copy the application jar
+COPY --from=build-env /build/app.jar .
 
-# Expose port if needed
 EXPOSE 8080
-
-# Run the application
-ENTRYPOINT ["java","-jar","app.jar"]
+ENTRYPOINT ["java","-jar","/app/app.jar"]
