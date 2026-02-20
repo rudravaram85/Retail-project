@@ -1,22 +1,15 @@
-# -------------------------------
-# Build Stage
-# -------------------------------
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023 AS build-env
+# ---------- Stage 1: Build the application ----------
+FROM amazonlinux:2023.0.2 AS build-env
 
-# Install minimal build tools
-RUN dnf --setopt=install_weak_deps=False install -q -y \
-    maven \
-    java-21-amazon-corretto-headless \
-    which \
-    tar \
-    gzip \
-    && dnf clean all
+# Install dependencies
+RUN dnf -y update && \
+    dnf -y install java-17-amazon-corretto-devel git tar unzip curl && \
+    dnf clean all
 
-# Set working directory for build
-WORKDIR /build
-VOLUME /tmp
+# Set working directory
+WORKDIR /app
 
-# Copy project files
+# Copy Maven wrapper and pom
 COPY .mvn .mvn
 COPY mvnw .
 COPY pom.xml .
@@ -24,52 +17,27 @@ COPY pom.xml .
 # Make Maven wrapper executable
 RUN chmod +x mvnw
 
-# Download dependencies offline
+# Download all dependencies offline
 RUN ./mvnw dependency:go-offline -B -q
 
-# Copy source code
-COPY ./src ./src
+# Copy source code and build the application
+COPY src ./src
+RUN ./mvnw package -DskipTests -B -q
 
-# Build the jar (skip tests for faster builds)
-RUN ./mvnw -DskipTests package -q \
-    && mv /build/target/ui-0.0.1-SNAPSHOT.jar /build/app.jar
-
-# -------------------------------
-# Package Stage
-# -------------------------------
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023
+# ---------- Stage 2: Create final runtime image ----------
+FROM amazonlinux:2023.0.2
 
 # Install minimal runtime dependencies
-RUN dnf --setopt=install_weak_deps=False install -q -y \
-    java-21-amazon-corretto-headless \
-    shadow-utils \
-    && dnf clean all
-
-# Replace minimal curl with full version (needed for some tools)
-RUN dnf -q -y swap libcurl-minimal libcurl-full \
-    && dnf -q -y swap curl-minimal curl-full
-
-# Create unprivileged user
-ENV APPUSER=appuser
-ENV APPUID=1000
-ENV APPGID=1000
-RUN useradd --home "/app" --create-home --user-group --uid "$APPUID" "$APPUSER"
-
-# Set environment variables
-ENV JAVA_TOOL_OPTIONS=
-ENV SPRING_PROFILES_ACTIVE=prod
+RUN dnf -y install java-17-amazon-corretto-headless && \
+    dnf clean all
 
 WORKDIR /app
-USER appuser
 
-# Copy license files
-COPY ./ATTRIBUTION.md ./LICENSES.md
+# Copy the built jar from the build stage
+COPY --from=build-env /app/target/*.jar app.jar
 
-# Copy built jar from build stage
-COPY --chown=appuser:appuser --from=build-env /build/app.jar .
-
-# Expose application port
+# Expose application port (change if needed)
 EXPOSE 8080
 
 # Run the application
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["java","-jar","app.jar"]
