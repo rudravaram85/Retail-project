@@ -1,38 +1,40 @@
-# ---------- Build Stage ----------
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023 AS build-env
+# ========================
+# Stage 1: Build
+# ========================
+FROM amazonlinux:2023 as build-env
 
-# Install Java + Maven
-RUN dnf --setopt=install_weak_deps=False install -y -q \
-        maven \
-        java-21-amazon-corretto-headless \
-        which \
-        tar \
-        gzip \
-    && dnf clean all
+# Install necessary tools: Java, Maven, curl, unzip, git
+RUN dnf -y update && \
+    dnf -y install java-17-amazon-corretto-devel maven curl git unzip && \
+    dnf clean all
 
-WORKDIR /build
+# Set working directory
+WORKDIR /app
 
-# Copy pom and download dependencies first
+# Copy only pom.xml first to leverage Docker cache
 COPY pom.xml .
+
+# Download dependencies offline
 RUN mvn dependency:go-offline -B -q
 
-# Copy source code and build
+# Copy source code
 COPY src ./src
-RUN mvn -DskipTests package -q \
-    && mv /build/target/ui-0.0.1-SNAPSHOT.jar /build/app.jar
 
-# ---------- Final Stage ----------
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023
+# Build project (skip tests for faster build)
+RUN mvn package -DskipTests -B
 
-RUN dnf --setopt=install_weak_deps=False install -y -q \
-        java-21-amazon-corretto-headless \
-        shadow-utils \
-    && dnf clean all
+# ========================
+# Stage 2: Runtime
+# ========================
+FROM amazonlinux:2023
+
+# Install Java runtime only
+RUN dnf -y install java-17-amazon-corretto-headless && dnf clean all
 
 WORKDIR /app
 
-# Copy the application jar
-COPY --from=build-env /build/app.jar .
+# Copy built JAR from build stage
+COPY --from=build-env /app/target/*.jar ./app.jar
 
-EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+# Run the application
+ENTRYPOINT ["java","-jar","app.jar"]
