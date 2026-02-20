@@ -14,8 +14,10 @@ WORKDIR /app
 # Copy pom.xml first to leverage Docker cache
 COPY pom.xml .
 
-# Copy all files and immediately set execute permissions on mvnw
+# Copy all files
 COPY . .
+
+# Fix permissions on mvnw BEFORE using it
 RUN chmod +x ./mvnw
 
 # Download dependencies offline
@@ -25,7 +27,7 @@ RUN ./mvnw dependency:go-offline -B -q
 COPY src ./src
 
 # Build project (skip tests for faster build)
-RUN mvn package -DskipTests -B
+RUN ./mvnw package -DskipTests -B
 
 # ========================
 # Stage 2: Runtime
