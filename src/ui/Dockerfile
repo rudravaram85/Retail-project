@@ -3,30 +3,28 @@
 # ========================
 FROM amazonlinux:2023 as build-env
 
-# Install necessary tools: Java, Maven, curl, unzip, git
+# Install Java, Maven, curl, git, unzip
 RUN dnf -y update && \
     dnf -y install java-17-amazon-corretto-devel maven curl git unzip && \
     dnf clean all
 
-# Set working directory
 WORKDIR /app
 
-# Copy pom.xml first to leverage Docker cache
+# Copy only Maven wrapper first
+COPY mvnw .
+COPY .mvn .mvn
+
+# Make mvnw executable inside container
+RUN chmod +x mvnw
+
+# Copy pom.xml separately to leverage cache
 COPY pom.xml .
-
-# Copy all files
-COPY . .
-
-# Fix permissions on mvnw BEFORE using it
-RUN chmod +x ./mvnw
-
-# Download dependencies offline
 RUN ./mvnw dependency:go-offline -B -q
 
 # Copy source code
 COPY src ./src
 
-# Build project (skip tests for faster build)
+# Build the project, skip tests
 RUN ./mvnw package -DskipTests -B
 
 # ========================
@@ -34,12 +32,12 @@ RUN ./mvnw package -DskipTests -B
 # ========================
 FROM amazonlinux:2023
 
-# Install Java runtime only
+# Install only Java runtime
 RUN dnf -y install java-17-amazon-corretto-headless && dnf clean all
 
 WORKDIR /app
 
-# Copy built JAR from build stage
+# Copy JAR from build stage
 COPY --from=build-env /app/target/*.jar ./app.jar
 
 # Run the application
