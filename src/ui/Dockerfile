@@ -15,8 +15,9 @@ WORKDIR /app
 COPY pom.xml .
 
 # Download dependencies offline
-RUN mvn dependency:go-offline -B -q
-
+COPY . .
+RUN chmod +x ./mvnw
+RUN ./mvnw dependency:go-offline -B -q
 # Copy source code
 COPY src ./src
 
